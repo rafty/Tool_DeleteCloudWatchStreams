@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  Deleting CloudWatch Logs Streams
+
+Parameters:
+
+  CloudWatchLogsGroup:
+    Description: CloudWatch Logs Group Name
+    Type: String
+    Default: /aws/lambda/serverlessrepo-Datadog-Log-For-loglambdaddfunction-1379AY0BANFA7
+
+  LogsStreamNamePrefix:
+    Description: CloudWatch Logs Stream Name prefix
+    Type: String
+    Default: 2019/07/
+
+Resources:
+
+
+  # -------------------------------------------------
+  # An AWS Lambda function that delete CloudWatch Logs Stream.
+  # -------------------------------------------------
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchFullAccess
+
+
+  CloudWatchlogsStreamDelete:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ToolCloudWatchlogsStreamDelete
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: python3.7
+      Timeout: 900
+      Handler: lambda_function.lambda_handler
+      CodeUri: lambda/
+      Environment:
+        Variables:
+          LOGS_GROUP_NAME: !Ref CloudWatchLogsGroup
+          STREAM_NAME_PREFIX: !Ref LogsStreamNamePrefix
