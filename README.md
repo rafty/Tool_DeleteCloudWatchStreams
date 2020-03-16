@@ -1,4 +1,4 @@
-# Tool_CloudWatch
+# Tool_CloudWatchStreamDelete
 CloudWatch Logsのログストリームを削除する
 
 [delete all log streams of a log group using aws cli](https://stackoverflow.com/questions/42134873/delete-all-log-streams-of-a-log-group-using-aws-cli)
