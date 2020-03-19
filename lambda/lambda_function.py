@@ -1,65 +1,71 @@
 # -*- coding: utf-8 -*-
 import os
+import datetime
 import logging
 import boto3
 
 logger = logging.getLogger()
 logger.setLevel(level=logging.INFO)
 logs = boto3.client('logs')
-LOGS_GROUP_NAME = '/aws/lambda/serverlessrepo-Datadog-Log-For-' \
-                  'loglambdaddfunction-1379AY0BANFA7'
-STREAM_NAME_PREFIX = '2020/03/'
 
 
-# environment variable
-# LOGS_GROUP_NAME = os.environ['LOGS_GROUP_NAME']
-# STREAM_NAME_PREFIX = os.environ['STREAM_NAME_PREFIX']
+def delete_stream(log_stream_name, log_group_name):
+    logger.info('delete_stream: {}'.format(log_stream_name))
+    logs.delete_log_stream(logGroupName=log_group_name,
+                           logStreamName=log_stream_name)
+    return log_stream_name
 
 
-def delete_stream(stream):
-    logger.info('stream: {}'.format(stream))
-    if stream.get('logStreamName').startswith(STREAM_NAME_PREFIX):
-        logger.info('delete streamName: {}'.format(stream.get('logStreamName')))
-        delete_response = logs.delete_log_stream(
-            logGroupName=LOGS_GROUP_NAME,
-            logStreamName=stream['logStreamName']
+def extract_streams_to_delete(log_streams):
+    # datetime to unixtime and to milliseconds
+    three_days_ago = int((datetime.datetime.utcnow() -
+                          datetime.timedelta(days=3)).timestamp()*1000)
+    now = int(datetime.datetime.utcnow().timestamp()*1000)
+
+    streams_to_delete = [
+        stream.get('logStreamName')
+        for stream in log_streams.get('logStreams')
+        if stream.get('lastEventTimestamp', now) <= three_days_ago]
+
+    logger.info('streams_to_delete: {}'.format(streams_to_delete))
+    return streams_to_delete
+
+
+def describe_log_streams(log_group_name, next_token):
+    if next_token:
+        log_streams = logs.describe_log_streams(
+            logGroupName=log_group_name,
+            nextToken=next_token
         )
-        logger.info('delete response: {}'.format(delete_response))
     else:
-        logger.info('???: {}: {}'.format(stream.get('logStreamName'), stream.get('logStreamName').startswith(STREAM_NAME_PREFIX)))
+        log_streams = logs.describe_log_streams(
+            logGroupName=log_group_name,
+        )
+    return log_streams
 
 
 def lambda_handler(event, context):
-    logger.info('event: {}'.format(event))
+    logger.info('lambda_handler(event): {}'.format(event))
 
-    response = dict()
-    response['nextToken'] = ''
+    log_groups = logs.describe_log_groups()
 
-    while True:
+    for log_group in log_groups.get('logGroups'):
+        log_group_name = log_group.get('logGroupName')
 
-        # if response['nextToken'] == '':
-        if response.get('nextToken', '') == '':
+        if log_group['storedBytes'] == 0:
+            logs.delete_log_group(logGroupName=log_group_name)
+            logger.info('delete log group: {}'.format(log_group_name))
+            continue
 
-            response = logs.describe_log_streams(
-                logGroupName=LOGS_GROUP_NAME
-            )
-            logger.info(response)
+        next_token = None
+        while True:
+            log_streams = describe_log_streams(log_group_name, next_token)
+            next_token = log_streams.get('nextToken', None)
 
-            results = list(map(lambda x: delete_stream(x), response['logStreams']))
-            logger.info('map result:{}'.format(results))
+            streams_to_delete = extract_streams_to_delete(log_streams)
 
-        else:
+            list(map(lambda x: delete_stream(x, log_group_name),
+                     streams_to_delete))
 
-            response = logs.describe_log_streams(
-                logGroupName=LOGS_GROUP_NAME,
-                nextToken=response['nextToken']
-            )
-            logger.info(response)
-
-            results = list(
-                map(lambda x: delete_stream(x), response['logStreams']))
-            logger.info('map result:{}'.format(results))
-
-        # if response['nextToken'] == '':
-        if response.get('nextToken', '') == '':
-            break
+            if not next_token or len(log_streams.get('logStreams')):
+                break
